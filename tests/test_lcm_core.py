@@ -223,15 +223,15 @@ class TestProviderPrefixedAuxiliaryCalls:
         auxiliary_client.call_llm = fake_call_llm
         monkeypatch.setitem(sys.modules, "agent.auxiliary_client", auxiliary_client)
 
-    def _install_fake_cerebras_provider(self, monkeypatch):
+    def _install_fake_provider(self, monkeypatch, provider="cerebras"):
         hermes_cli = ModuleType("hermes_cli")
         hermes_cli.__path__ = []
 
         runtime_provider = ModuleType("hermes_cli.runtime_provider")
 
-        def fake_get_named_custom_provider(provider):
-            if provider == "cerebras":
-                return {"name": "cerebras", "base_url": "https://api.cerebras.ai/v1"}
+        def fake_get_named_custom_provider(requested_provider):
+            if requested_provider == provider:
+                return {"name": provider, "base_url": "https://example.invalid/v1"}
             return None
 
         runtime_provider._get_named_custom_provider = fake_get_named_custom_provider
@@ -255,13 +255,33 @@ class TestProviderPrefixedAuxiliaryCalls:
             return self._fake_response("summary")
 
         self._install_fake_auxiliary_client(monkeypatch, fake_call_llm)
-        self._install_fake_cerebras_provider(monkeypatch)
+        self._install_fake_provider(monkeypatch)
 
         result = _call_llm_for_summary("summarize", 200, model="cerebras/gpt-oss-120b")
 
         assert result == "summary"
         assert seen["provider"] == "cerebras"
         assert seen["model"] == "gpt-oss-120b"
+
+    def test_summary_call_passes_minimax_flash_provider_and_model(self, monkeypatch):
+        from hermes_lcm.escalation import _call_llm_for_summary
+
+        seen = {}
+
+        def fake_call_llm(**kwargs):
+            seen.update(kwargs)
+            return self._fake_response("summary")
+
+        self._install_fake_auxiliary_client(monkeypatch, fake_call_llm)
+        self._install_fake_provider(monkeypatch, provider="minimax")
+
+        result = _call_llm_for_summary(
+            "summarize", 200, model="minimax/MiniMax-M3.1-Flash"
+        )
+
+        assert result == "summary"
+        assert seen["provider"] == "minimax"
+        assert seen["model"] == "MiniMax-M3.1-Flash"
 
     def test_summary_call_keeps_unresolved_direct_slug_model_only(self, monkeypatch):
         from hermes_lcm.escalation import _call_llm_for_summary
@@ -539,7 +559,7 @@ class TestProviderPrefixedAuxiliaryCalls:
             return self._fake_response("- decision")
 
         self._install_fake_auxiliary_client(monkeypatch, fake_call_llm)
-        self._install_fake_cerebras_provider(monkeypatch)
+        self._install_fake_provider(monkeypatch)
 
         result = _call_extraction_llm("extract", model="cerebras/gpt-oss-120b")
 
@@ -557,7 +577,7 @@ class TestProviderPrefixedAuxiliaryCalls:
             return self._fake_response("answer")
 
         self._install_fake_auxiliary_client(monkeypatch, fake_call_llm)
-        self._install_fake_cerebras_provider(monkeypatch)
+        self._install_fake_provider(monkeypatch)
 
         result = _synthesize_expansion_answer(
             prompt="question",
